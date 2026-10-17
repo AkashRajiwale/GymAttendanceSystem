@@ -24,8 +24,10 @@ export function QrScanner({
   const [hint, setHint] = useState(title);
   // Kept in a ref so a new callback from the parent doesn't restart the camera.
   const resultRef = useRef(onResult);
+  const closeRef = useRef(onClose);
   useEffect(() => {
     resultRef.current = onResult;
+    closeRef.current = onClose;
   });
 
   useEffect(() => {
@@ -82,8 +84,16 @@ export function QrScanner({
         return false;
       }
       navigator.vibrate?.(60);
-      if (resultRef.current) resultRef.current(url.searchParams.get("k") ?? undefined);
-      else router.push(`/scan${url.search}`);
+      if (resultRef.current) {
+        resultRef.current(url.searchParams.get("k") ?? undefined);
+      } else {
+        // Close first: Next.js keeps this page alive in the background, and an open
+        // scanner would still be showing when the member comes back to it.
+        closeRef.current();
+        // A unique `t` makes the scan page treat every scan as new.
+        url.searchParams.set("t", String(Date.now()));
+        router.push(`/scan${url.search}`);
+      }
       return true;
     }
 

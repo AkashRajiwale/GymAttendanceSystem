@@ -18,10 +18,13 @@ export default function ScanPage() {
   const [showActions, setShowActions] = useState(false);
   const [showOther, setShowOther] = useState(false);
   const [added, setAdded] = useState<Visit[]>([]);
-  const started = useRef(false);
+  const scannedUrl = useRef<string | null>(null);
 
   async function scan() {
     setPhase({ kind: "scanning" });
+    setShowActions(false);
+    setShowOther(false);
+    setAdded([]);
     try {
       const key = new URLSearchParams(location.search).get("k") ?? undefined;
       const res = await api<{ status: ScanStatus; record: Visit }>("/api/scan", { body: { k: key } });
@@ -35,9 +38,11 @@ export default function ScanPage() {
   }
 
   useEffect(() => {
-    // Guard against React running the effect twice, which would scan in and straight out.
-    if (started.current) return;
-    started.current = true;
+    // Next.js keeps this page alive between visits and re-runs this effect when it is
+    // shown again. Scan once per link (in-app scans add a unique `t`), so a new scan always
+    // hits the server, while React's double effect run or the Back button doesn't re-scan.
+    if (scannedUrl.current === location.search) return;
+    scannedUrl.current = location.search;
     scan();
   }, []);
 
@@ -72,6 +77,7 @@ export default function ScanPage() {
           {showActions && (
             <div className="rise flex flex-col gap-4" style={{ animationDelay: "0s" }}>
               <VisitCard visit={phase.record} onChange={(record) => setPhase({ ...phase, record })} />
+              <AddedVisits visits={added} onChange={upsertAdded} />
               {showOther ? (
                 <AddOtherForm onAdded={upsertAdded} onCancel={() => setShowOther(false)} />
               ) : (
@@ -79,7 +85,6 @@ export default function ScanPage() {
                   + Mark attendance for someone else
                 </Button>
               )}
-              <AddedVisits visits={added} onChange={upsertAdded} />
               <Link href="/" className="text-center text-sm text-muted underline-offset-4 hover:underline">
                 Go to home
               </Link>

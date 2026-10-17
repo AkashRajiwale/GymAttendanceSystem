@@ -194,7 +194,7 @@ function Stat({ label, value, accent = "" }: { label: string; value: string; acc
 
 // ---------------------------------------------------------------- Add for someone else
 
-type PickMember = { ref: string; name: string; last4: string };
+type PickMember = { ref: string; name: string; last4: string; inside: boolean };
 let membersCache: PickMember[] | null = null;
 
 /**
@@ -226,6 +226,8 @@ export function AddOtherForm({ onAdded, onCancel }: { onAdded: (v: Visit) => voi
 
   const ready = picked === "new" ? name.trim().length > 1 && phone.replace(/\D/g, "").length >= 10 : !!picked;
   const who = picked === "new" ? name.trim() : picked?.name;
+  const checkingOut = !!picked && picked !== "new" && picked.inside;
+  const first = who?.split(" ")[0];
 
   async function onScanned(k: string | undefined) {
     setScanning(false);
@@ -250,7 +252,8 @@ export function AddOtherForm({ onAdded, onCancel }: { onAdded: (v: Visit) => voi
       setQuery("");
       setName("");
       setPhone("");
-      if (picked === "new") membersCache = null;
+      // Refresh the list so the "inside" badges match what just happened.
+      api<{ members: PickMember[] }>("/api/members").then((d) => setMembers((membersCache = d.members)), () => {});
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -287,7 +290,10 @@ export function AddOtherForm({ onAdded, onCancel }: { onAdded: (v: Visit) => voi
                 }}
                 className="flex items-center justify-between border-b border-line px-4 py-3 text-left last:border-b-0 hover:bg-surface-2"
               >
-                <span className="font-medium">{m.name}</span>
+                <span className="font-medium">
+                  {m.name}
+                  {m.inside && <span className="ml-2 rounded bg-accent/15 px-1.5 py-0.5 text-xs text-accent">inside</span>}
+                </span>
                 <span className="font-mono text-xs text-muted">••{m.last4}</span>
               </button>
             ))}
@@ -303,6 +309,7 @@ export function AddOtherForm({ onAdded, onCancel }: { onAdded: (v: Visit) => voi
           <span>
             <span className="font-semibold">{picked.name}</span>{" "}
             <span className="font-mono text-xs text-muted">••{picked.last4}</span>
+            {picked.inside && <span className="ml-2 text-xs text-accent">inside now</span>}
           </span>
           <Button variant="ghost" className="px-2 py-1 text-sm" onClick={() => setPicked(null)}>
             Change
@@ -322,8 +329,14 @@ export function AddOtherForm({ onAdded, onCancel }: { onAdded: (v: Visit) => voi
 
       <ErrorText>{error}</ErrorText>
       <div className="flex gap-2">
-        <Button className="flex-1" disabled={!ready} loading={busy} onClick={() => setScanning(true)}>
-          Scan QR {who ? `for ${who.split(" ")[0]}` : "to mark attendance"}
+        <Button
+          variant={checkingOut ? "out" : "primary"}
+          className="flex-1"
+          disabled={!ready}
+          loading={busy}
+          onClick={() => setScanning(true)}
+        >
+          {!first ? "Scan QR to mark attendance" : checkingOut ? `Scan QR to check out ${first}` : `Scan QR to check in ${first}`}
         </Button>
         <Button variant="secondary" onClick={onCancel}>
           Close
@@ -332,7 +345,7 @@ export function AddOtherForm({ onAdded, onCancel }: { onAdded: (v: Visit) => voi
 
       {scanning && (
         <QrScanner
-          title={`Scan the gym QR to mark ${who}`}
+          title={`Scan the gym QR to check ${checkingOut ? "out" : "in"} ${who}`}
           onResult={onScanned}
           onClose={() => setScanning(false)}
         />
@@ -359,15 +372,88 @@ export function EarlierVisits({ visits }: { visits: Visit[] }) {
   );
 }
 
-/** Visits this member added for others today, each with its own in/out controls. */
+/**
+ * People this member marked today. Whoever marked someone in can check them out,
+ * since that person usually has no phone for leaving either.
+ */
 export function AddedVisits({ visits, onChange }: { visits: Visit[]; onChange: (v: Visit) => void }) {
   if (!visits.length) return null;
+  const inside = visits.filter((v) => !v.outTime).length;
   return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">Added by you today</h2>
+    <section className="flex flex-col gap-2">
+      <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
+        People you marked today{inside > 0 && <span className="ml-2 normal-case text-accent">{inside} still inside</span>}
+      </h2>
       {visits.map((v) => (
-        <VisitCard key={v.id} visit={v} onChange={onChange} title={v.name} />
+        <AddedRow key={v.id} visit={v} onChange={onChange} />
       ))}
     </section>
+  );
+}
+
+function AddedRow({ visit, onChange }: { visit: Visit; onChange: (v: Visit) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const open = !visit.outTime;
+
+  async function checkOut() {
+    setBusy(true);
+    setError("");
+    try {
+      const { record } = await api<{ record: Visit }>("/api/attendance", {
+        method: "PATCH",
+        body: { date: visit.date, id: visit.id, outTime: "now" },
+      });
+      navigator.vibrate?.([60, 60, 60]);
+      onChange(record);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="flex flex-col gap-2">
+        <VisitCard
+          visit={visit}
+          title={visit.name}
+          onChange={(v) => {
+            onChange(v);
+            setEditing(false);
+          }}
+        />
+        <Button variant="ghost" className="text-sm" onClick={() => setEditing(false)}>
+          Done
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`flex flex-col gap-2 rounded-xl border bg-surface px-4 py-3 ${open ? "border-accent/40" : "border-line"}`}>
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">{visit.name}</p>
+          <p className="font-mono text-xs text-muted">
+            <span className="text-accent">{fmtTime(visit.inTime)}</span> →{" "}
+            {open ? "inside" : <span className="text-out">{fmtTime(visit.outTime)}</span>}
+          </p>
+        </div>
+        {open && visit.canSetOut && (
+          <Button variant="out" className="px-4 py-2 text-sm" loading={busy} onClick={checkOut}>
+            Check out
+          </Button>
+        )}
+        {(visit.canEditIn || visit.canSetOut) && (
+          <Button variant="ghost" className="px-2 py-2 text-sm" onClick={() => setEditing(true)}>
+            Edit
+          </Button>
+        )}
+      </div>
+      <ErrorText>{error}</ErrorText>
+    </div>
   );
 }

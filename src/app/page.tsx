@@ -36,7 +36,14 @@ export default function Home() {
     );
   }
 
-  useEffect(load, []);
+  useEffect(() => {
+    // Runs on first load and again whenever Next.js shows this kept-alive page again.
+    load();
+    // Also refresh when the member switches back to the app, so the lists stay current.
+    const onVisible = () => document.visibilityState === "visible" && load();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
 
   async function logout() {
     if (!confirm("Log out from this phone?")) return;
@@ -117,6 +124,8 @@ export default function Home() {
 
       <EarlierVisits visits={me.earlier ?? []} />
 
+      <AddedVisits visits={me.added ?? []} onChange={replaceAdded} />
+
       {showOther ? (
         <AddOtherForm onAdded={replaceAdded} onCancel={() => setShowOther(false)} />
       ) : (
@@ -124,8 +133,6 @@ export default function Home() {
           + Mark attendance for someone else
         </Button>
       )}
-
-      <AddedVisits visits={me.added ?? []} onChange={replaceAdded} />
 
       <div className="mt-auto flex justify-center pt-6">
         <Button variant="ghost" onClick={logout} className="text-sm">
