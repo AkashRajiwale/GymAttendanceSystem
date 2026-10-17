@@ -7,7 +7,7 @@ import { fmtTime, fmtDuration, durationMinutes } from "@/lib/time";
 import { QrScanner } from "./qr-scanner";
 import { Button, Card, ErrorText, Field } from "./ui";
 
-export type Visit = Attendance & { canEditIn: boolean; canSetOut: boolean };
+export type Visit = Attendance & { canEditIn: boolean; canSetOut: boolean; canDelete: boolean };
 export type MemberInfo = { phone: string; name: string };
 
 // ---------------------------------------------------------------- Registration
@@ -98,7 +98,18 @@ export function ScanAnimation({ status, name }: { status: "in" | "out" | "alread
 
 // ---------------------------------------------------------------- Visit card (edit in / out)
 
-export function VisitCard({ visit, onChange, title }: { visit: Visit; onChange: (v: Visit) => void; title?: string }) {
+export function VisitCard({
+  visit,
+  onChange,
+  onDelete,
+  title,
+}: {
+  visit: Visit;
+  onChange: (v: Visit) => void;
+  /** Shows a delete button (within 1 hour of check-in) when provided. */
+  onDelete?: (v: Visit) => void;
+  title?: string;
+}) {
   const [editing, setEditing] = useState<"in" | "out" | null>(null);
   const [time, setTime] = useState("");
   const [error, setError] = useState("");
@@ -117,6 +128,19 @@ export function VisitCard({ visit, onChange, title }: { visit: Visit; onChange: 
     } catch (err) {
       setError((err as Error).message);
     } finally {
+      setLoading(null);
+    }
+  }
+
+  async function remove() {
+    if (!confirm(`Delete ${visit.name}'s attendance from ${fmtTime(visit.inTime)}? This can't be undone.`)) return;
+    setError("");
+    setLoading("delete");
+    try {
+      await api("/api/attendance", { method: "DELETE", body: { date: visit.date, id: visit.id } });
+      onDelete?.(visit);
+    } catch (err) {
+      setError((err as Error).message);
       setLoading(null);
     }
   }
@@ -140,7 +164,7 @@ export function VisitCard({ visit, onChange, title }: { visit: Visit; onChange: 
       {editing ? (
         <div className="flex flex-col gap-3">
           <Field
-            label={editing === "in" ? "Correct in time (up to 1 hour earlier)" : "Out time (within last 2 hours)"}
+            label={editing === "in" ? "Correct in time (up to 1 hour earlier)" : "Out time (within 2 hours of now)"}
             type="time"
             value={time}
             onChange={(e) => setTime(e.target.value)}
@@ -177,6 +201,11 @@ export function VisitCard({ visit, onChange, title }: { visit: Visit; onChange: 
             </Button>
           )}
         </div>
+      )}
+      {!editing && visit.canDelete && onDelete && (
+        <Button variant="danger" className="self-center py-1.5 text-sm" loading={loading === "delete"} onClick={remove}>
+          Delete this entry
+        </Button>
       )}
       <ErrorText>{error}</ErrorText>
     </Card>
@@ -237,7 +266,7 @@ export function AddOtherForm({ onAdded, onCancel }: { onAdded: (v: Visit) => voi
       const target = picked === "new" ? { name, phone } : { ref: (picked as PickMember).ref };
       const { status, record } = await api<{ status: "in" | "out" | "already-in"; record: Visit }>(
         "/api/attendance/other",
-        { body: { ...target, k } },
+        { body: { ...target, k, intent: checkingOut ? "out" : undefined } },
       );
       navigator.vibrate?.(120);
       setDone(
@@ -376,7 +405,15 @@ export function EarlierVisits({ visits }: { visits: Visit[] }) {
  * People this member marked today. Whoever marked someone in can check them out,
  * since that person usually has no phone for leaving either.
  */
-export function AddedVisits({ visits, onChange }: { visits: Visit[]; onChange: (v: Visit) => void }) {
+export function AddedVisits({
+  visits,
+  onChange,
+  onDelete,
+}: {
+  visits: Visit[];
+  onChange: (v: Visit) => void;
+  onDelete: (v: Visit) => void;
+}) {
   if (!visits.length) return null;
   const inside = visits.filter((v) => !v.outTime).length;
   return (
@@ -385,13 +422,21 @@ export function AddedVisits({ visits, onChange }: { visits: Visit[]; onChange: (
         People you marked today{inside > 0 && <span className="ml-2 normal-case text-accent">{inside} still inside</span>}
       </h2>
       {visits.map((v) => (
-        <AddedRow key={v.id} visit={v} onChange={onChange} />
+        <AddedRow key={v.id} visit={v} onChange={onChange} onDelete={onDelete} />
       ))}
     </section>
   );
 }
 
-function AddedRow({ visit, onChange }: { visit: Visit; onChange: (v: Visit) => void }) {
+function AddedRow({
+  visit,
+  onChange,
+  onDelete,
+}: {
+  visit: Visit;
+  onChange: (v: Visit) => void;
+  onDelete: (v: Visit) => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -424,6 +469,7 @@ function AddedRow({ visit, onChange }: { visit: Visit; onChange: (v: Visit) => v
             onChange(v);
             setEditing(false);
           }}
+          onDelete={onDelete}
         />
         <Button variant="ghost" className="text-sm" onClick={() => setEditing(false)}>
           Done
@@ -447,7 +493,7 @@ function AddedRow({ visit, onChange }: { visit: Visit; onChange: (v: Visit) => v
             Check out
           </Button>
         )}
-        {(visit.canEditIn || visit.canSetOut) && (
+        {(visit.canEditIn || visit.canSetOut || visit.canDelete) && (
           <Button variant="ghost" className="px-2 py-2 text-sm" onClick={() => setEditing(true)}>
             Edit
           </Button>

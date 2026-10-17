@@ -6,7 +6,8 @@ import { scanFor } from "@/lib/visits";
  * No open visit today -> check in. Open visit -> check out.
  */
 export const POST = handle(async (req: Request) => {
-  requireGymKey((await body(req)).k);
+  const b = await body(req);
+  requireGymKey(b.k);
   const member = await requireMember();
-  return scanFor(member, null);
+  return scanFor(member, null, b.intent === "out" ? "out" : undefined);
 });

@@ -11,10 +11,13 @@ import { Button, Spinner } from "./ui";
 export function QrScanner({
   onClose,
   onResult,
+  intent,
   title = "Point the camera at the QR poster at the entrance",
 }: {
   onClose: () => void;
   onResult?: (key: string | undefined) => void;
+  /** "out" when opened from a check-out button, so the scan always checks out. */
+  intent?: "out";
   title?: string;
 }) {
   const video = useRef<HTMLVideoElement>(null);
@@ -25,9 +28,11 @@ export function QrScanner({
   // Kept in a ref so a new callback from the parent doesn't restart the camera.
   const resultRef = useRef(onResult);
   const closeRef = useRef(onClose);
+  const intentRef = useRef(intent);
   useEffect(() => {
     resultRef.current = onResult;
     closeRef.current = onClose;
+    intentRef.current = intent;
   });
 
   useEffect(() => {
@@ -92,6 +97,7 @@ export function QrScanner({
         closeRef.current();
         // A unique `t` makes the scan page treat every scan as new.
         url.searchParams.set("t", String(Date.now()));
+        if (intentRef.current) url.searchParams.set("a", intentRef.current);
         router.push(`/scan${url.search}`);
       }
       return true;

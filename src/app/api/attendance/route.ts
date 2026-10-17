@@ -1,6 +1,6 @@
 import { body, fail, handle, requireMember } from "@/lib/api";
-import { findAttendance, saveAttendance } from "@/lib/db";
-import { checkInTime, checkOutTime, withFlags } from "@/lib/rules";
+import { deleteAttendance, findAttendance, saveAttendance } from "@/lib/db";
+import { canDelete, checkInTime, checkOutTime, withFlags } from "@/lib/rules";
 import { isDate, isTime, istParts } from "@/lib/time";
 
 /**
@@ -34,4 +34,18 @@ export const PATCH = handle(async (req: Request) => {
 
   await saveAttendance(record);
   return { record: withFlags(record, now) };
+});
+
+/** Delete a mistaken entry within 1 hour of check-in. Body: { date, id } */
+export const DELETE = handle(async (req: Request) => {
+  const member = await requireMember();
+  const b = await body(req);
+  if (!isDate(b.date) || typeof b.id !== "string") fail(400, "Invalid request");
+
+  const record = await findAttendance(b.date as string, b.id as string);
+  if (!record) return fail(404, "Attendance not found");
+  if (record.phone !== member.phone && record.addedBy !== member.phone) fail(403, "Not your attendance");
+  if (!canDelete(record)) fail(400, "Entries can only be deleted within 1 hour of check-in. Ask the admin.");
+
+  await deleteAttendance(record.date, record.id);
 });

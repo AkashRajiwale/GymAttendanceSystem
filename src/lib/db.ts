@@ -15,6 +15,7 @@ export type Attendance = {
   updatedAt: string;
   addedByName: string; // name of whoever recorded it
   entryType: EntryType;
+  outRecordedAt: string; // ISO timestamp of when the out time was first recorded ("" while inside)
 };
 
 /** self = member scanned for themselves, other = marked by another member, admin = entered by admin */
@@ -44,7 +45,7 @@ const PAYMENT_HEADERS = ["id", "phone", "name", "month", "amount", "paid_on", "m
 const attendanceTab = (month: string) => `Attendance ${month}`;
 const ATTENDANCE_HEADERS = [
   "id", "date", "phone", "name", "in_time", "out_time", "added_by", "created_at", "updated_at",
-  "added_by_name", "entry_type",
+  "added_by_name", "entry_type", "out_recorded_at",
 ];
 
 export const newId = () => crypto.randomBytes(6).toString("base64url");
@@ -101,12 +102,14 @@ const toAttendance = (r: string[]): Attendance => {
     addedByName: r[9] ?? "",
     // Rows written before entry_type existed are inferred from added_by.
     entryType: (r[10] as EntryType) || (!addedBy ? "self" : addedBy === "admin" ? "admin" : "other"),
+    // Older rows: the last update is the best guess for when they checked out.
+    outRecordedAt: r[11] || (r[5] ? (r[8] ?? "") : ""),
   };
 };
 
 const fromAttendance = (a: Attendance): Row => [
   a.id, a.date, a.phone, a.name, a.inTime, a.outTime, a.addedBy, a.createdAt, a.updatedAt,
-  a.addedByName, a.entryType,
+  a.addedByName, a.entryType, a.outRecordedAt,
 ];
 
 export async function listAttendance(month: string): Promise<Attendance[]> {
@@ -134,6 +137,9 @@ export async function saveAttendance(a: Attendance) {
   const index = (await s.rows(tab)).findIndex((r) => r[0] === a.id);
   if (index < 0) throw new Error("Attendance record not found");
   a.updatedAt = new Date().toISOString();
+  // Stamp the moment of check-out once; editing the out time later doesn't move it.
+  if (!a.outTime) a.outRecordedAt = "";
+  else if (!a.outRecordedAt) a.outRecordedAt = a.updatedAt;
   await s.update(tab, index, fromAttendance(a));
   return a;
 }

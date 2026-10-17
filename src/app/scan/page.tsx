@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { AddOtherForm, AddedVisits, RegisterForm, ScanAnimation, VisitCard, type Visit } from "@/components/member";
+import { RegisterForm, ScanAnimation, VisitCard, type Visit } from "@/components/member";
 import { Button, Card, Header, Shell, Spinner } from "@/components/ui";
 import { ApiError, api } from "@/lib/client";
 
@@ -16,18 +17,17 @@ type Phase =
 export default function ScanPage() {
   const [phase, setPhase] = useState<Phase>({ kind: "scanning" });
   const [showActions, setShowActions] = useState(false);
-  const [showOther, setShowOther] = useState(false);
-  const [added, setAdded] = useState<Visit[]>([]);
   const scannedUrl = useRef<string | null>(null);
+  const router = useRouter();
 
   async function scan() {
     setPhase({ kind: "scanning" });
     setShowActions(false);
-    setShowOther(false);
-    setAdded([]);
     try {
-      const key = new URLSearchParams(location.search).get("k") ?? undefined;
-      const res = await api<{ status: ScanStatus; record: Visit }>("/api/scan", { body: { k: key } });
+      const params = new URLSearchParams(location.search);
+      const res = await api<{ status: ScanStatus; record: Visit }>("/api/scan", {
+        body: { k: params.get("k") ?? undefined, intent: params.get("a") ?? undefined },
+      });
       setPhase({ kind: "done", ...res });
       navigator.vibrate?.(res.status === "out" ? [60, 60, 60] : 120);
       setTimeout(() => setShowActions(true), 1400);
@@ -45,9 +45,6 @@ export default function ScanPage() {
     scannedUrl.current = location.search;
     scan();
   }, []);
-
-  const upsertAdded = (v: Visit) =>
-    setAdded((list) => (list.some((a) => a.id === v.id) ? list.map((a) => (a.id === v.id ? v : a)) : [...list, v]));
 
   return (
     <Shell>
@@ -76,17 +73,14 @@ export default function ScanPage() {
           <ScanAnimation status={phase.status} name={phase.record.name} />
           {showActions && (
             <div className="rise flex flex-col gap-4" style={{ animationDelay: "0s" }}>
-              <VisitCard visit={phase.record} onChange={(record) => setPhase({ ...phase, record })} />
-              <AddedVisits visits={added} onChange={upsertAdded} />
-              {showOther ? (
-                <AddOtherForm onAdded={upsertAdded} onCancel={() => setShowOther(false)} />
-              ) : (
-                <Button variant="secondary" onClick={() => setShowOther(true)}>
-                  + Mark attendance for someone else
-                </Button>
-              )}
-              <Link href="/" className="text-center text-sm text-muted underline-offset-4 hover:underline">
-                Go to home
+              <VisitCard
+                visit={phase.record}
+                onChange={(record) => setPhase({ ...phase, record })}
+                onDelete={() => router.push("/")}
+              />
+              <Button onClick={() => router.push("/")}>Done</Button>
+              <Link href="/more" className="text-center text-sm text-muted underline-offset-4 hover:underline">
+                Mark attendance for someone else
               </Link>
             </div>
           )}

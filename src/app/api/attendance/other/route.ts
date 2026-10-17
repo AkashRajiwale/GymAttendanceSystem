@@ -20,5 +20,5 @@ export const POST = handle(async (req: Request) => {
       : await findOrCreateMember(cleanName(b.name), cleanPhone(b.phone));
   if (person.phone === me.phone) fail(400, "That's you — use the main Scan button to mark yourself");
 
-  return scanFor(person, me);
+  return scanFor(person, me, b.intent === "out" ? "out" : undefined);
 });

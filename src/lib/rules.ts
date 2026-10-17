@@ -3,6 +3,8 @@ import { MINUTE, istToMs } from "./time";
 
 /** In time can be corrected for 1 hour after the scan, to any time up to 1 hour before it. */
 export const IN_EDIT_WINDOW = 60 * MINUTE;
+/** After checking out, in and out times can be corrected for this long, then they are locked. */
+export const AFTER_OUT_EDIT_WINDOW = 60 * MINUTE;
 /** Out time can be set to any time within 2 hours of now, before or after. */
 export const OUT_WINDOW = 120 * MINUTE;
 /** A second scan this soon after checking in is treated as an accidental double scan. */
@@ -26,18 +28,26 @@ function outMs(a: Attendance, outTime: string) {
   return ms;
 }
 
+/** Checked out, and still within the hour after checking out. */
+function inAfterOutWindow(a: Attendance, now: number) {
+  return now - Date.parse(a.outRecordedAt || a.updatedAt) <= AFTER_OUT_EDIT_WINDOW;
+}
+
 export function canEditIn(a: Attendance, now = Date.now()) {
+  if (a.outTime) return inAfterOutWindow(a, now);
   return now - Date.parse(a.createdAt) <= IN_EDIT_WINDOW;
 }
 
 export function canSetOut(a: Attendance, now = Date.now()) {
-  if (isStale(a, now)) return false;
-  return now - inMs(a) >= 0 && (!a.outTime || now - outMs(a, a.outTime) <= OUT_WINDOW);
+  if (a.outTime) return inAfterOutWindow(a, now);
+  return !isStale(a, now) && now - inMs(a) >= 0;
 }
+
+const LOCKED = "Times can only be changed within 1 hour of checking out";
 
 /** Returns an error message, or null when the new in time is allowed. */
 export function checkInTime(a: Attendance, inTime: string, now = Date.now()) {
-  if (!canEditIn(a, now)) return "In time can only be changed within 1 hour of check-in";
+  if (!canEditIn(a, now)) return a.outTime ? LOCKED : "In time can only be changed within 1 hour of check-in";
   const created = Date.parse(a.createdAt);
   const ms = istToMs(a.date, inTime);
   if (ms < created - IN_EDIT_WINDOW) return "In time can be at most 1 hour before you scanned";
@@ -47,7 +57,7 @@ export function checkInTime(a: Attendance, inTime: string, now = Date.now()) {
 }
 
 export function checkOutTime(a: Attendance, outTime: string, now = Date.now()) {
-  if (!canSetOut(a, now)) return "Out time can only be changed within 2 hours";
+  if (!canSetOut(a, now)) return a.outTime ? LOCKED : "This visit can no longer be checked out — ask the admin";
   // A clock time before the in time means after midnight only when that is near now.
   const sameDayMs = istToMs(a.date, outTime);
   const ms = sameDayMs <= inMs(a) && Math.abs(outMs(a, outTime) - now) <= OUT_WINDOW ? outMs(a, outTime) : sameDayMs;
@@ -56,7 +66,14 @@ export function checkOutTime(a: Attendance, outTime: string, now = Date.now()) {
   return null;
 }
 
+/** A mistaken entry can be deleted by the member for 1 hour after it was created. */
+export const DELETE_WINDOW = 60 * MINUTE;
+
+export function canDelete(a: Attendance, now = Date.now()) {
+  return now - Date.parse(a.createdAt) <= DELETE_WINDOW;
+}
+
 /** Extra fields the UI needs to decide which buttons to show. */
 export function withFlags(a: Attendance, now = Date.now()) {
-  return { ...a, canEditIn: canEditIn(a, now), canSetOut: canSetOut(a, now) };
+  return { ...a, canEditIn: canEditIn(a, now), canSetOut: canSetOut(a, now), canDelete: canDelete(a, now) };
 }
