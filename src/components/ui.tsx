@@ -1,7 +1,9 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
 import { GYM_NAME } from "@/lib/brand";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -63,14 +65,48 @@ export function Shell({ children, wide }: { children: ReactNode; wide?: boolean 
   );
 }
 
+/** How long the logo must be held to open the admin login. */
+const ADMIN_HOLD_MS = 1500;
+
 export function Header({ right }: { right?: ReactNode }) {
+  const router = useRouter();
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const held = useRef(false);
+
+  // Press and hold the logo to open /admin (hidden from members); a normal tap goes home.
+  const startHold = () => {
+    held.current = false;
+    timer.current = setTimeout(() => {
+      held.current = true;
+      navigator.vibrate?.(40);
+      router.push("/admin");
+    }, ADMIN_HOLD_MS);
+  };
+  const cancelHold = () => clearTimeout(timer.current);
+
   return (
     <header className="flex items-center justify-between">
-      <Link href="/" className="flex items-center gap-2 text-lg font-bold tracking-tight">
-        <span className="grid size-8 place-items-center rounded-lg bg-accent text-sm font-black text-accent-ink">
-          {GYM_NAME.slice(0, 1)}
-        </span>
-        {GYM_NAME}
+      <Link
+        href="/"
+        onPointerDown={startHold}
+        onPointerUp={cancelHold}
+        onPointerLeave={cancelHold}
+        onPointerCancel={cancelHold}
+        onContextMenu={(e) => e.preventDefault()}
+        onClick={(e) => held.current && e.preventDefault()}
+        draggable={false}
+        className="flex min-w-0 select-none items-center [-webkit-touch-callout:none]"
+      >
+        {/* logo-header.png is public/logo.png trimmed to the artwork (788x120) */}
+        <Image
+          src="/logo-header.png"
+          alt={GYM_NAME}
+          width={788}
+          height={120}
+          priority
+          draggable={false}
+          className="pointer-events-none h-8 w-auto max-w-full sm:h-9"
+        />
       </Link>
       {right}
     </header>
