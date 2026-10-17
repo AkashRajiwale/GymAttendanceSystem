@@ -3,10 +3,19 @@ import { MINUTE, istToMs } from "./time";
 
 /** In time can be corrected for 1 hour after the scan, to any time up to 1 hour before it. */
 export const IN_EDIT_WINDOW = 60 * MINUTE;
-/** Out time can be set to any time within the last 2 hours. */
+/** Out time can be set to any time within 2 hours of now, before or after. */
 export const OUT_WINDOW = 120 * MINUTE;
 /** A second scan this soon after checking in is treated as an accidental double scan. */
 export const DOUBLE_SCAN_GUARD = 3 * MINUTE;
+/**
+ * A visit still open after this long was never checked out (e.g. a morning visit).
+ * Scanning again starts a new visit instead of closing the old one hours later.
+ */
+export const STALE_VISIT = 5 * 60 * MINUTE;
+
+export function isStale(a: Attendance, now = Date.now()) {
+  return !a.outTime && now - inMs(a) > STALE_VISIT;
+}
 
 const inMs = (a: Attendance) => istToMs(a.date, a.inTime);
 
@@ -22,6 +31,7 @@ export function canEditIn(a: Attendance, now = Date.now()) {
 }
 
 export function canSetOut(a: Attendance, now = Date.now()) {
+  if (isStale(a, now)) return false;
   return now - inMs(a) >= 0 && (!a.outTime || now - outMs(a, a.outTime) <= OUT_WINDOW);
 }
 
@@ -38,13 +48,11 @@ export function checkInTime(a: Attendance, inTime: string, now = Date.now()) {
 
 export function checkOutTime(a: Attendance, outTime: string, now = Date.now()) {
   if (!canSetOut(a, now)) return "Out time can only be changed within 2 hours";
-  const ms = outMs(a, outTime);
-  // A clock time before the in time is only "after midnight" if that moment has already passed.
+  // A clock time before the in time means after midnight only when that is near now.
   const sameDayMs = istToMs(a.date, outTime);
-  if (sameDayMs <= inMs(a) && ms > now + MINUTE) return "Out time must be after in time";
-  if (ms > now + MINUTE) return "Out time can't be in the future";
-  if (ms < now - OUT_WINDOW) return "Out time must be within the last 2 hours";
+  const ms = sameDayMs <= inMs(a) && Math.abs(outMs(a, outTime) - now) <= OUT_WINDOW ? outMs(a, outTime) : sameDayMs;
   if (ms <= inMs(a)) return "Out time must be after in time";
+  if (Math.abs(ms - now) > OUT_WINDOW) return "Out time must be within 2 hours of now";
   return null;
 }
 

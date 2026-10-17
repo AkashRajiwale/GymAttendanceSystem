@@ -12,6 +12,7 @@ export type Row = Cell[];
  */
 export interface Store {
   ensureTab(tab: string, headers: string[]): Promise<void>;
+  hasTab(tab: string): Promise<boolean>;
   rows(tab: string): Promise<string[][]>;
   append(tab: string, row: Row): Promise<void>;
   update(tab: string, index: number, row: Row): Promise<void>;
@@ -95,9 +96,23 @@ class SheetsStore implements Store {
     return id;
   }
 
+  async hasTab(tab: string) {
+    return (this.sheetIds ?? (await this.loadSheetIds())).has(tab) || (await this.loadSheetIds()).has(tab);
+  }
+
   async ensureTab(tab: string, headers: string[]) {
     const ids = this.sheetIds ?? (await this.loadSheetIds());
-    if (ids.has(tab) || (await this.loadSheetIds()).has(tab)) return;
+    if (ids.has(tab) || (await this.loadSheetIds()).has(tab)) {
+      // Columns are only ever added at the end, so refresh the header row when it is behind.
+      const head = await this.call<{ values?: Cell[][] }>(`/values/${this.range(tab, "A1:Z1")}`);
+      if ((head.values?.[0] ?? []).join() !== headers.join()) {
+        await this.call(`/values/${this.range(tab, "A1")}?valueInputOption=RAW`, {
+          method: "PUT",
+          body: JSON.stringify({ values: [headers] }),
+        });
+      }
+      return;
+    }
     try {
       await this.call(":batchUpdate", {
         method: "POST",
@@ -175,12 +190,15 @@ class LocalStore implements Store {
     fs.writeFileSync(this.file, JSON.stringify(db, null, 2));
   }
 
+  async hasTab(tab: string) {
+    return !!this.load()[tab];
+  }
+
   async ensureTab(tab: string, headers: string[]) {
     const db = this.load();
-    if (!db[tab]) {
-      db[tab] = { headers, rows: [] };
-      this.save(db);
-    }
+    if (!db[tab]) db[tab] = { headers, rows: [] };
+    else db[tab].headers = headers;
+    this.save(db);
   }
 
   async rows(tab: string) {

@@ -5,7 +5,18 @@ import type { Attendance, Member, Payment } from "@/lib/db";
 import { GYM_NAME } from "@/lib/brand";
 import { api } from "@/lib/client";
 import { buildReportPdf, download, reportText, sharePdf, whatsappLink } from "@/lib/report";
-import { currentMonth, durationMinutes, fmtDate, fmtDuration, fmtMonth, fmtTime, today } from "@/lib/time";
+import {
+  addMonths,
+  currentMonth,
+  durationMinutes,
+  fmtDate,
+  fmtDuration,
+  fmtMonth,
+  fmtMonthRange,
+  fmtTime,
+  monthSpan,
+  today,
+} from "@/lib/time";
 import { Button, Card, ErrorText, Field, Spinner } from "./ui";
 
 const rupees = (n: number) => `₹${n.toLocaleString("en-IN")}`;
@@ -165,7 +176,17 @@ function AttendanceRow({ record, index, onChange }: { record: Attendance; index:
           <p className="truncate font-medium">{record.name}</p>
           <p className="text-xs text-muted">
             {record.phone}
-            {record.addedBy && ` · added by ${record.addedBy}`}
+            {record.entryType !== "self" && (
+              <span
+                className={`ml-1.5 rounded px-1.5 py-0.5 ${
+                  record.entryType === "admin" ? "bg-surface-2 text-muted" : "bg-out/15 text-out"
+                }`}
+              >
+                {record.entryType === "admin"
+                  ? "added by admin"
+                  : `added by ${record.addedByName || record.addedBy}`}
+              </span>
+            )}
           </p>
         </div>
         {!editing && (
@@ -253,28 +274,39 @@ function AddAttendanceForm({ date, onDone, onCancel }: { date: string; onDone: (
 
 // ---------------------------------------------------------------- Fees
 
+type PaidRow = Member & { payment: Payment };
+type UnpaidRow = Member & { visitedThisMonth: boolean };
 type FeesData = {
   month: string;
   monthlyFee: number | null;
-  payments: Payment[];
-  total: number;
-  unpaid: (Member & { visitedThisMonth: boolean })[];
+  collected: number;
+  paid: PaidRow[];
+  unpaid: UnpaidRow[];
 };
 
 export function FeesTab() {
   const [month, setMonth] = useState(currentMonth());
   const { data, error, reload } = useData<FeesData>(`/api/admin/payments?month=${month}`);
-  const members = useData<{ members: Member[] }>("/api/admin/members");
-  const [activeOnly, setActiveOnly] = useState(true);
+  const [q, setQ] = useState("");
+  const [busy, setBusy] = useState("");
   const fees = data?.month === month ? data : null;
 
-  async function remove(p: Payment) {
-    if (!confirm(`Delete ${p.name}'s payment of ${rupees(p.amount)}?`)) return;
-    await api("/api/admin/payments", { method: "DELETE", body: { id: p.id } });
+  const s = q.trim().toLowerCase();
+  const match = (m: Member) => !s || m.name.toLowerCase().includes(s) || m.phone.includes(s);
+  const paid = fees?.paid.filter(match) ?? [];
+  const unpaid = fees?.unpaid.filter(match) ?? [];
+
+  async function undo(row: PaidRow) {
+    const p = row.payment;
+    const span = monthSpan(p.month, p.toMonth);
+    const what = span > 1 ? `all ${span} months (${fmtMonthRange(p.month, p.toMonth)})` : fmtMonth(p.month);
+    if (!confirm(`Undo ${row.name}'s payment of ${rupees(p.amount)}? This marks ${what} as not paid.`)) return;
+    setBusy(p.id);
+    await api("/api/admin/payments", { method: "DELETE", body: { id: p.id } }).catch((e) => alert(e.message));
+    setBusy("");
     reload();
   }
 
-  const unpaid = fees?.unpaid.filter((m) => !activeOnly || m.visitedThisMonth) ?? [];
   const reminder = (name: string) =>
     `Hi ${name.split(" ")[0]}, a friendly reminder from ${GYM_NAME}: your fee for ${fmtMonth(month)} is due${
       fees?.monthlyFee ? ` (${rupees(fees.monthlyFee)})` : ""
@@ -288,20 +320,12 @@ export function FeesTab() {
           <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} className={inputClass} />
         </label>
         <div className="flex gap-6 pb-2">
-          <Stat label="Collected" value={fees ? rupees(fees.total) : "–"} />
-          <Stat label="Paid" value={fees?.payments.length ?? "–"} />
-          <Stat label="Unpaid" value={fees?.unpaid.length ?? "–"} />
+          <Stat label="Paid" value={fees?.paid.length ?? "–"} />
+          <Stat label="Not paid" value={fees?.unpaid.length ?? "–"} />
+          <Stat label="Received" value={fees ? rupees(fees.collected) : "–"} />
         </div>
       </div>
-
-      {/* Remount when the month or fee loads so the form's defaults follow them */}
-      <AddPaymentForm
-        key={`${month}-${data?.monthlyFee}`}
-        month={month}
-        monthlyFee={data?.monthlyFee ?? null}
-        members={members.data?.members ?? []}
-        onDone={reload}
-      />
+      <input placeholder="Search name or phone" value={q} onChange={(e) => setQ(e.target.value)} className={`${inputClass} py-3`} />
 
       <ErrorText>{error}</ErrorText>
       {!fees && !error && <Loading />}
@@ -309,50 +333,38 @@ export function FeesTab() {
       {fees && (
         <div className="grid gap-4 md:grid-cols-2">
           <section className="flex flex-col gap-2">
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-muted">Paid for {fmtMonth(month)}</h3>
-            {fees.payments.length === 0 && <p className="text-sm text-muted">No payments yet.</p>}
-            {fees.payments.map((p) => (
-              <div key={p.id} className="flex items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{p.name}</p>
-                  <p className="text-xs text-muted">
-                    {p.phone} · {fmtDate(p.paidOn)} · {p.mode}
-                    {p.note && ` · ${p.note}`}
-                  </p>
-                </div>
-                <p className="font-mono font-semibold text-accent">{rupees(p.amount)}</p>
-                <Button variant="danger" className="px-2 py-1 text-sm" onClick={() => remove(p)}>
-                  ✕
-                </Button>
-              </div>
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-out">Not paid · {unpaid.length}</h3>
+            {unpaid.length === 0 && <p className="text-sm text-muted">Everyone has paid 🎉</p>}
+            {unpaid.map((m) => (
+              <UnpaidItem key={m.phone} member={m} month={month} monthlyFee={fees.monthlyFee} reminder={reminder(m.name)} onDone={reload} />
             ))}
           </section>
 
           <section className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold uppercase tracking-wider text-muted">Not paid yet</h3>
-              <label className="flex items-center gap-2 text-sm text-muted">
-                <input type="checkbox" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} />
-                Came this month
-              </label>
-            </div>
-            {unpaid.length === 0 && <p className="text-sm text-muted">Everyone has paid 🎉</p>}
-            {unpaid.map((m) => (
-              <div key={m.phone} className="flex items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{m.name}</p>
-                  <p className="text-xs text-muted">{m.phone}</p>
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-accent">Paid · {paid.length}</h3>
+            {paid.length === 0 && <p className="text-sm text-muted">No one has paid for {fmtMonth(month)} yet.</p>}
+            {paid.map((row) => {
+              const p = row.payment;
+              const bulk = p.month !== p.toMonth;
+              return (
+                <div key={row.phone} className="flex items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{row.name}</p>
+                    <p className="text-xs text-muted">
+                      {rupees(p.amount)} · {p.mode} · {fmtDate(p.paidOn)}
+                      {bulk && (
+                        <span className="ml-1 rounded bg-accent/15 px-1.5 py-0.5 text-accent">
+                          {fmtMonthRange(p.month, p.toMonth)}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <Button variant="secondary" className="px-3 py-1.5 text-sm" loading={busy === p.id} onClick={() => undo(row)}>
+                    Undo paid
+                  </Button>
                 </div>
-                <a
-                  href={whatsappLink(reminder(m.name), m.phone)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-lg bg-out/15 px-3 py-1.5 text-sm font-semibold text-out"
-                >
-                  Remind
-                </a>
-              </div>
-            ))}
+              );
+            })}
           </section>
         </div>
       )}
@@ -360,86 +372,148 @@ export function FeesTab() {
   );
 }
 
-function AddPaymentForm({
+/** Which months a payment covers, relative to the month being viewed. */
+const COVER_PRESETS = [
+  { id: "1", label: "This month", from: 0, to: 0 },
+  { id: "next3", label: "Next 3 months", from: 0, to: 2 },
+  { id: "prev3", label: "Previous 3 months", from: -2, to: 0 },
+  { id: "custom", label: "Custom", from: 0, to: 0 },
+] as const;
+
+function UnpaidItem({
+  member,
   month,
   monthlyFee,
-  members,
+  reminder,
   onDone,
 }: {
+  member: UnpaidRow;
   month: string;
   monthlyFee: number | null;
-  members: Member[];
+  reminder: string;
   onDone: () => void;
 }) {
-  const [member, setMember] = useState("");
+  const [open, setOpen] = useState(false);
+  const [preset, setPreset] = useState<(typeof COVER_PRESETS)[number]["id"]>("1");
+  const [from, setFrom] = useState(month);
+  const [to, setTo] = useState(month);
   const [amount, setAmount] = useState(monthlyFee ? String(monthlyFee) : "");
-  const [forMonth, setForMonth] = useState(month);
-  const [paidOn, setPaidOn] = useState(today());
   const [mode, setMode] = useState("UPI");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
-  const [ok, setOk] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // The member box accepts "Name — phone" picked from the list, or a bare phone number.
-  const phone = member.match(/(\d{10})\s*$/)?.[1] ?? "";
-  const picked = members.find((m) => m.phone === phone);
+  function pick(id: (typeof COVER_PRESETS)[number]["id"]) {
+    setPreset(id);
+    if (id === "custom") return;
+    const p = COVER_PRESETS.find((x) => x.id === id)!;
+    const f = addMonths(month, p.from);
+    const t = addMonths(month, p.to);
+    setFrom(f);
+    setTo(t);
+    // Suggest the full amount for the months covered; the admin can change it.
+    if (monthlyFee) setAmount(String(monthlyFee * monthSpan(f, t)));
+  }
 
-  async function submit(e: FormEvent) {
+  async function save(e: FormEvent) {
     e.preventDefault();
-    setError("");
-    setOk("");
-    if (!picked) return setError("Pick a member from the list");
     setBusy(true);
+    setError("");
     try {
-      await api("/api/admin/payments", { body: { phone, month: forMonth, amount, paidOn, mode, note } });
-      setOk(`Saved ${rupees(Number(amount))} for ${picked.name}`);
-      setMember("");
-      setNote("");
+      await api("/api/admin/payments", { body: { phone: member.phone, fromMonth: from, toMonth: to, amount, mode, note } });
       onDone();
     } catch (err) {
       setError((err as Error).message);
-    } finally {
       setBusy(false);
     }
   }
 
+  const span = monthSpan(from, to);
   return (
-    <Card>
-      <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
-        <p className="font-semibold sm:col-span-2">Record a payment</p>
-        <label className="flex flex-col gap-1.5 sm:col-span-2">
-          <span className="text-sm text-muted">Member (type name or phone)</span>
-          <input list="members" value={member} onChange={(e) => setMember(e.target.value)} className={`${inputClass} py-3`} required />
-          <datalist id="members">
-            {members.map((m) => (
-              <option key={m.phone} value={`${m.name} — ${m.phone}`} />
-            ))}
-          </datalist>
-        </label>
-        <Field label="Amount (₹)" type="number" min={1} value={amount} onChange={(e) => setAmount(e.target.value)} required />
-        <Field label="Fee for month" type="month" value={forMonth} onChange={(e) => setForMonth(e.target.value)} required />
-        <Field label="Paid on" type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} required />
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm text-muted">Mode</span>
-          <select value={mode} onChange={(e) => setMode(e.target.value)} className={`${inputClass} py-3`}>
-            <option>UPI</option>
-            <option>Cash</option>
-            <option>Other</option>
-          </select>
-        </label>
-        <div className="sm:col-span-2">
-          <Field label="Note (optional, e.g. UPI ref)" value={note} onChange={(e) => setNote(e.target.value)} />
+    <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface px-4 py-3">
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">{member.name}</p>
+          <p className="text-xs text-muted">
+            {member.phone}
+            {!member.visitedThisMonth && " · not seen this month"}
+          </p>
         </div>
-        <div className="flex flex-col gap-2 sm:col-span-2">
-          <ErrorText>{error}</ErrorText>
-          {ok && <p className="text-sm text-accent">{ok}</p>}
-          <Button type="submit" loading={busy}>
-            Save payment
+        <a
+          href={whatsappLink(reminder, member.phone)}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-lg px-2 py-1.5 text-sm font-semibold text-out hover:bg-out/10"
+        >
+          Remind
+        </a>
+        {!open && (
+          <Button className="px-3 py-1.5 text-sm" onClick={() => setOpen(true)}>
+            Mark as paid
           </Button>
-        </div>
-      </form>
-    </Card>
+        )}
+      </div>
+
+      {open && (
+        <form onSubmit={save} className="flex flex-col gap-3 border-t border-line pt-3">
+          <div className="flex flex-wrap gap-1.5">
+            {COVER_PRESETS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => pick(p.id)}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                  preset === p.id ? "bg-accent text-accent-ink" : "bg-surface-2 text-muted"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {preset === "custom" ? (
+            <div className="grid grid-cols-2 gap-2">
+              <label className="flex flex-col gap-1 text-xs text-muted">
+                From
+                <input type="month" value={from} onChange={(e) => e.target.value && setFrom(e.target.value)} className={inputClass} />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-muted">
+                To
+                <input type="month" value={to} onChange={(e) => e.target.value && setTo(e.target.value)} className={inputClass} />
+              </label>
+            </div>
+          ) : (
+            <p className="text-sm text-muted">
+              Covers <span className="text-foreground">{fmtMonthRange(from, to)}</span>
+              {span > 1 && ` (${span} months)`}
+            </p>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            <label className="flex flex-col gap-1 text-xs text-muted">
+              Amount (₹)
+              <input type="number" min={1} value={amount} onChange={(e) => setAmount(e.target.value)} className={inputClass} required />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-muted">
+              Mode
+              <select value={mode} onChange={(e) => setMode(e.target.value)} className={inputClass}>
+                <option>UPI</option>
+                <option>Cash</option>
+                <option>Other</option>
+              </select>
+            </label>
+          </div>
+          <input placeholder="Note (optional, e.g. UPI ref)" value={note} onChange={(e) => setNote(e.target.value)} className={inputClass} />
+          <ErrorText>{error}</ErrorText>
+          <div className="flex gap-2">
+            <Button type="submit" className="flex-1 py-2" loading={busy}>
+              Save · {rupees(Number(amount) || 0)}
+            </Button>
+            <Button type="button" variant="secondary" className="py-2" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      )}
+    </div>
   );
 }
 

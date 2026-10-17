@@ -26,6 +26,8 @@ export const POST = handle(async (req: Request) => {
     inTime: b.inTime as string,
     outTime: (b.outTime as string) || "",
     addedBy: "admin",
+    addedByName: "Admin",
+    entryType: "admin",
     createdAt: stamp,
     updatedAt: stamp,
   });

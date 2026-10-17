@@ -61,6 +61,28 @@ export function fmtMonth(m: string) {
   });
 }
 
+/** "2026-10" + 2 -> "2026-12"; negative steps go back. */
+export function addMonths(m: string, n: number) {
+  const [y, mo] = m.split("-").map(Number);
+  const total = y * 12 + (mo - 1) + n;
+  return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, "0")}`;
+}
+
+/** Number of months from a to b inclusive. */
+export function monthSpan(a: string, b: string) {
+  const [ay, am] = a.split("-").map(Number);
+  const [by, bm] = b.split("-").map(Number);
+  return by * 12 + bm - (ay * 12 + am) + 1;
+}
+
+/** "Oct 2026" or "Oct – Dec 2026" */
+export function fmtMonthRange(from: string, to: string) {
+  const short = (m: string, year: boolean) =>
+    new Date(`${m}-01T00:00:00Z`).toLocaleDateString("en-IN", { month: "short", year: year ? "numeric" : undefined, timeZone: "UTC" });
+  if (from === to) return short(from, true);
+  return `${short(from, from.slice(0, 4) !== to.slice(0, 4))} – ${short(to, true)}`;
+}
+
 /** Minutes between two "HH:mm" times; an out time before in time means past midnight. */
 export function durationMinutes(inTime: string, outTime: string) {
   if (!inTime || !outTime) return null;

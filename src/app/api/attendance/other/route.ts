@@ -1,34 +1,24 @@
-import { body, cleanName, cleanPhone, fail, handle, requireMember } from "@/lib/api";
-import { addAttendance, findOrCreateMember, listDay, newId } from "@/lib/db";
-import { withFlags } from "@/lib/rules";
-import { istParts } from "@/lib/time";
+import { body, cleanName, cleanPhone, fail, handle, requireGymKey, requireMember } from "@/lib/api";
+import { memberRef } from "@/lib/auth";
+import { findOrCreateMember, listMembers } from "@/lib/db";
+import { scanFor } from "@/lib/visits";
 
-/** Check in someone who doesn't have their phone with them. Body: { name, phone } */
+/**
+ * Scan the gym QR on behalf of someone who doesn't have their phone.
+ * Body: { k, ref } for a registered member picked from the list,
+ *    or { k, name, phone } for someone new.
+ * Like a normal scan, it checks them in, or out if they're already in.
+ */
 export const POST = handle(async (req: Request) => {
   const me = await requireMember();
   const b = await body(req);
-  const phone = cleanPhone(b.phone);
-  const name = cleanName(b.name);
-  if (phone === me.phone) fail(400, "That's your own number — scan the QR to mark yourself");
+  requireGymKey(b.k);
 
-  const nowMs = Date.now();
-  const now = istParts(nowMs);
-  const [member, day] = await Promise.all([findOrCreateMember(name, phone), listDay(now.date)]);
-  if (day.some((a) => a.phone === phone && !a.outTime)) {
-    fail(409, `${member.name} is already checked in`);
-  }
+  const person =
+    typeof b.ref === "string"
+      ? ((await listMembers()).find((m) => memberRef(m.phone) === b.ref) ?? fail(404, "Member not found"))
+      : await findOrCreateMember(cleanName(b.name), cleanPhone(b.phone));
+  if (person.phone === me.phone) fail(400, "That's you — use the main Scan button to mark yourself");
 
-  const stamp = new Date(nowMs).toISOString();
-  const record = await addAttendance({
-    id: newId(),
-    date: now.date,
-    phone,
-    name: member.name,
-    inTime: now.time,
-    outTime: "",
-    addedBy: me.phone,
-    createdAt: stamp,
-    updatedAt: stamp,
-  });
-  return { record: withFlags(record, nowMs) };
+  return scanFor(person, me);
 });

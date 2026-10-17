@@ -13,13 +13,19 @@ export type Attendance = {
   addedBy: string; // phone of whoever recorded it ("" = self, "admin" = admin)
   createdAt: string; // ISO timestamp of the actual scan/entry
   updatedAt: string;
+  addedByName: string; // name of whoever recorded it
+  entryType: EntryType;
 };
+
+/** self = member scanned for themselves, other = marked by another member, admin = entered by admin */
+export type EntryType = "self" | "other" | "admin";
 
 export type Payment = {
   id: string;
   phone: string;
   name: string;
-  month: string; // YYYY-MM the fee is for
+  month: string; // YYYY-MM: first month this payment covers
+  toMonth: string; // YYYY-MM: last month covered (same as month for a single month)
   amount: number;
   paidOn: string; // YYYY-MM-DD
   mode: string;
@@ -31,11 +37,15 @@ const MEMBERS = "Members";
 const MEMBER_HEADERS = ["phone", "name", "joined_at"];
 
 const PAYMENTS = "Payments";
-const PAYMENT_HEADERS = ["id", "phone", "name", "month", "amount", "paid_on", "mode", "note", "created_at"];
+// New columns are only ever appended, so older rows keep working.
+const PAYMENT_HEADERS = ["id", "phone", "name", "month", "amount", "paid_on", "mode", "note", "created_at", "to_month"];
 
 // One attendance tab per month keeps every scan's read small and the sheet easy to browse.
 const attendanceTab = (month: string) => `Attendance ${month}`;
-const ATTENDANCE_HEADERS = ["id", "date", "phone", "name", "in_time", "out_time", "added_by", "created_at", "updated_at"];
+const ATTENDANCE_HEADERS = [
+  "id", "date", "phone", "name", "in_time", "out_time", "added_by", "created_at", "updated_at",
+  "added_by_name", "entry_type",
+];
 
 export const newId = () => crypto.randomBytes(6).toString("base64url");
 
@@ -76,25 +86,34 @@ export async function findOrCreateMember(name: string, phone: string): Promise<M
 
 // ---------------------------------------------------------------- Attendance
 
-const toAttendance = (r: string[]): Attendance => ({
-  id: r[0],
-  date: r[1] ?? "",
-  phone: r[2] ?? "",
-  name: r[3] ?? "",
-  inTime: r[4] ?? "",
-  outTime: r[5] ?? "",
-  addedBy: r[6] ?? "",
-  createdAt: r[7] ?? "",
-  updatedAt: r[8] ?? "",
-});
+const toAttendance = (r: string[]): Attendance => {
+  const addedBy = r[6] ?? "";
+  return {
+    id: r[0],
+    date: r[1] ?? "",
+    phone: r[2] ?? "",
+    name: r[3] ?? "",
+    inTime: r[4] ?? "",
+    outTime: r[5] ?? "",
+    addedBy,
+    createdAt: r[7] ?? "",
+    updatedAt: r[8] ?? "",
+    addedByName: r[9] ?? "",
+    // Rows written before entry_type existed are inferred from added_by.
+    entryType: (r[10] as EntryType) || (!addedBy ? "self" : addedBy === "admin" ? "admin" : "other"),
+  };
+};
 
 const fromAttendance = (a: Attendance): Row => [
   a.id, a.date, a.phone, a.name, a.inTime, a.outTime, a.addedBy, a.createdAt, a.updatedAt,
+  a.addedByName, a.entryType,
 ];
 
 export async function listAttendance(month: string): Promise<Attendance[]> {
   const tab = attendanceTab(month);
-  const rows = await (await table(tab, ATTENDANCE_HEADERS)).rows(tab);
+  // Reading a month nobody has visited yet must not create an empty tab.
+  if (!ensured.has(tab) && !(await store().hasTab(tab))) return [];
+  const rows = await store().rows(tab);
   return rows.filter((r) => r[0]).map(toAttendance);
 }
 
@@ -142,7 +161,11 @@ const toPayment = (r: string[]): Payment => ({
   mode: r[6] ?? "",
   note: r[7] ?? "",
   createdAt: r[8] ?? "",
+  toMonth: r[9] || r[3] || "",
 });
+
+/** True when the payment covers the given month (bulk payments cover a range). */
+export const coversMonth = (p: Payment, month: string) => p.month <= month && month <= p.toMonth;
 
 export async function listPayments(): Promise<Payment[]> {
   const rows = await (await table(PAYMENTS, PAYMENT_HEADERS)).rows(PAYMENTS);
@@ -151,7 +174,7 @@ export async function listPayments(): Promise<Payment[]> {
 
 export async function addPayment(p: Payment) {
   await (await table(PAYMENTS, PAYMENT_HEADERS)).append(PAYMENTS, [
-    p.id, p.phone, p.name, p.month, p.amount, p.paidOn, p.mode, p.note, p.createdAt,
+    p.id, p.phone, p.name, p.month, p.amount, p.paidOn, p.mode, p.note, p.createdAt, p.toMonth,
   ]);
   return p;
 }

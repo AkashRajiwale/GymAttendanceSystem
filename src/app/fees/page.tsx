@@ -1,13 +1,26 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Card, FullPageSpinner, Header, Shell } from "@/components/ui";
 import type { Payment } from "@/lib/db";
 import { ApiError, api } from "@/lib/client";
-import { fmtDate, fmtMonth } from "@/lib/time";
+import { fmtDate, fmtMonth, fmtMonthRange, monthSpan } from "@/lib/time";
 
-type Fees = { month: string; paidThisMonth: boolean; monthlyFee: number | null; payments: Payment[] };
+type Fees = {
+  month: string;
+  paidThisMonth: boolean;
+  paidUntil: string | null;
+  monthlyFee: number | null;
+  payments: Payment[];
+};
+
+const homeLink = (
+  <Link href="/" className="rounded-lg border border-line px-3 py-1.5 text-sm font-medium">
+    ← Home
+  </Link>
+);
 
 const rupees = (n: number) => `₹${n.toLocaleString("en-IN")}`;
 
@@ -27,7 +40,7 @@ export default function FeesPage() {
   if (error) {
     return (
       <Shell>
-        <Header />
+        <Header right={homeLink} />
         <Card className="text-danger">{error}</Card>
       </Shell>
     );
@@ -36,13 +49,16 @@ export default function FeesPage() {
 
   return (
     <Shell>
-      <Header />
+      <Header right={homeLink} />
 
       <Card className={fees.paidThisMonth ? "border-accent/40" : "border-out/40"}>
         <p className="text-sm text-muted">{fmtMonth(fees.month)}</p>
         <p className={`mt-1 text-2xl font-bold ${fees.paidThisMonth ? "text-accent" : "text-out"}`}>
           {fees.paidThisMonth ? "Paid ✓" : "Fee pending"}
         </p>
+        {fees.paidUntil && fees.paidUntil !== fees.month && (
+          <p className="mt-1 text-muted">Paid up to {fmtMonth(fees.paidUntil)}</p>
+        )}
         {!fees.paidThisMonth && fees.monthlyFee && <p className="mt-1 text-muted">Monthly fee: {rupees(fees.monthlyFee)}</p>}
       </Card>
 
@@ -70,7 +86,12 @@ export default function FeesPage() {
         {fees.payments.map((p) => (
           <div key={p.id} className="flex items-center justify-between rounded-xl border border-line bg-surface px-4 py-3">
             <div>
-              <p className="font-medium">{fmtMonth(p.month)}</p>
+              <p className="font-medium">
+                {p.month === p.toMonth ? fmtMonth(p.month) : fmtMonthRange(p.month, p.toMonth)}
+                {p.month !== p.toMonth && (
+                  <span className="ml-2 text-xs text-muted">{monthSpan(p.month, p.toMonth)} months</span>
+                )}
+              </p>
               <p className="text-xs text-muted">
                 Paid {fmtDate(p.paidOn)} · {p.mode}
               </p>

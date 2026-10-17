@@ -2,13 +2,21 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { AddOtherForm, AddedVisits, RegisterForm, VisitCard, type MemberInfo, type Visit } from "@/components/member";
+import {
+  AddOtherForm,
+  AddedVisits,
+  EarlierVisits,
+  RegisterForm,
+  VisitCard,
+  type MemberInfo,
+  type Visit,
+} from "@/components/member";
 import { QrScanner } from "@/components/qr-scanner";
 import { Button, Card, FullPageSpinner, Header, Shell } from "@/components/ui";
 import { api } from "@/lib/client";
 import { fmtDate, fmtMonth } from "@/lib/time";
 
-type Me = { member: MemberInfo | null; date?: string; mine?: Visit | null; added?: Visit[] };
+type Me = { member: MemberInfo | null; date?: string; mine?: Visit | null; earlier?: Visit[]; added?: Visit[] };
 type Fees = { month: string; paidThisMonth: boolean };
 
 export default function Home() {
@@ -54,6 +62,8 @@ export default function Home() {
     );
   }
   if (!me) return <FullPageSpinner />;
+  // An open visit the member can still close (a forgotten morning visit doesn't count).
+  const inside = !!me.mine && !me.mine.outTime && me.mine.canSetOut;
 
   if (!me.member) {
     return (
@@ -99,21 +109,16 @@ export default function Home() {
         </Card>
       )}
 
-      {(!me.mine || !me.mine.outTime) && (
-        <Button variant={me.mine ? "out" : "primary"} className="py-4 text-lg" onClick={() => setScanning(true)}>
-          <ScanIcon small /> {me.mine ? "Scan QR to check out" : "Scan QR to check in"}
-        </Button>
-      )}
+      {/* Always available, so a member can come back for a second visit the same day. */}
+      <Button variant={inside ? "out" : "primary"} className="py-4 text-lg" onClick={() => setScanning(true)}>
+        <ScanIcon small /> {inside ? "Scan QR to check out" : me.mine ? "Scan QR to check in again" : "Scan QR to check in"}
+      </Button>
       {scanning && <QrScanner onClose={() => setScanning(false)} />}
 
+      <EarlierVisits visits={me.earlier ?? []} />
+
       {showOther ? (
-        <AddOtherForm
-          onAdded={(v) => {
-            replaceAdded(v);
-            setShowOther(false);
-          }}
-          onCancel={() => setShowOther(false)}
-        />
+        <AddOtherForm onAdded={replaceAdded} onCancel={() => setShowOther(false)} />
       ) : (
         <Button variant="secondary" onClick={() => setShowOther(true)}>
           + Mark attendance for someone else

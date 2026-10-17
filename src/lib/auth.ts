@@ -69,6 +69,11 @@ export async function clearAdmin() {
   (await cookies()).delete(ADMIN_COOKIE);
 }
 
+/** Opaque per-member id, so the member picker never exposes phone numbers. */
+export function memberRef(phone: string) {
+  return crypto.createHmac("sha256", secret()).update(`member:${phone}`).digest("base64url").slice(0, 16);
+}
+
 export function checkAdminPassword(password: string) {
   const expected = process.env.ADMIN_PASSWORD ?? (process.env.VERCEL ? "" : "admin");
   if (!expected) return false;

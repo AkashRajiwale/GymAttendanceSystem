@@ -4,13 +4,29 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Button, Spinner } from "./ui";
 
-/** Full-screen camera view that reads the gym QR and opens its /scan link. */
-export function QrScanner({ onClose }: { onClose: () => void }) {
+/**
+ * Full-screen camera view that reads the gym QR. By default it opens the QR's
+ * /scan link; with `onResult` it hands back the QR's key instead.
+ */
+export function QrScanner({
+  onClose,
+  onResult,
+  title = "Point the camera at the QR poster at the entrance",
+}: {
+  onClose: () => void;
+  onResult?: (key: string | undefined) => void;
+  title?: string;
+}) {
   const video = useRef<HTMLVideoElement>(null);
   const router = useRouter();
   const [error, setError] = useState("");
   const [ready, setReady] = useState(false);
-  const [hint, setHint] = useState("Point the camera at the QR poster at the entrance");
+  const [hint, setHint] = useState(title);
+  // Kept in a ref so a new callback from the parent doesn't restart the camera.
+  const resultRef = useRef(onResult);
+  useEffect(() => {
+    resultRef.current = onResult;
+  });
 
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -66,7 +82,8 @@ export function QrScanner({ onClose }: { onClose: () => void }) {
         return false;
       }
       navigator.vibrate?.(60);
-      router.push(`/scan${url.search}`);
+      if (resultRef.current) resultRef.current(url.searchParams.get("k") ?? undefined);
+      else router.push(`/scan${url.search}`);
       return true;
     }
 

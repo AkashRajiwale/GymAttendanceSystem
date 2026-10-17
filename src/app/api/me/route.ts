@@ -12,12 +12,15 @@ export const GET = handle(async () => {
 
   const date = today();
   const day = await listDay(date);
-  const mine = day.filter((a) => a.phone === member.phone && a.addedBy !== member.phone);
-  const added = day.filter((a) => a.addedBy === member.phone);
+  const byTime = (x: { createdAt: string }, y: { createdAt: string }) => x.createdAt.localeCompare(y.createdAt);
+  const mine = day.filter((a) => a.phone === member.phone).sort(byTime);
+  const added = day.filter((a) => a.addedBy === member.phone).sort(byTime);
   return {
     member,
     date,
+    // Latest visit gets the controls; earlier visits today (e.g. morning) are listed.
     mine: mine.length ? withFlags(mine[mine.length - 1]) : null,
+    earlier: mine.slice(0, -1).map((a) => withFlags(a)),
     added: added.map((a) => withFlags(a)),
   };
 });

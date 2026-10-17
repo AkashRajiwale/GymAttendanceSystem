@@ -38,6 +38,12 @@ export async function requireMember(): Promise<MemberSession> {
   return (await getMember()) ?? fail(401, "Please register first");
 }
 
+/** Rejects requests that don't carry the key printed in the gym QR. */
+export function requireGymKey(k: unknown) {
+  const key = process.env.GYM_QR_KEY;
+  if (key && k !== key) fail(403, "This QR code is not valid. Please scan the QR at the gym.");
+}
+
 export async function requireAdmin() {
   if (!(await isAdmin())) fail(401, "Admin login required");
 }

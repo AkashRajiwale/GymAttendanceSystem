@@ -19,7 +19,7 @@ export async function buildReportPdf(date: string, records: Attendance[]) {
   const plain = (s: string) => s.replace(/—/g, "-");
   autoTable(doc, {
     startY: 32,
-    head: [["#", "Name", "Phone", "In", "Out", "Duration"]],
+    head: [["#", "Name", "Phone", "In", "Out", "Duration", "Added by"]],
     body: records.map((r, i) => [
       i + 1,
       r.name,
@@ -27,6 +27,7 @@ export async function buildReportPdf(date: string, records: Attendance[]) {
       plain(fmtTime(r.inTime)),
       plain(fmtTime(r.outTime)),
       plain(fmtDuration(durationMinutes(r.inTime, r.outTime))),
+      r.entryType === "self" ? "Self" : r.entryType === "admin" ? "Admin" : r.addedByName || r.addedBy,
     ]),
     headStyles: { fillColor: [20, 24, 22], textColor: [184, 245, 61] },
     alternateRowStyles: { fillColor: [244, 246, 245] },

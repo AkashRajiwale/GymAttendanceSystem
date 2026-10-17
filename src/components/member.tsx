@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { Attendance } from "@/lib/db";
 import { api, nowTime } from "@/lib/client";
 import { fmtTime, fmtDuration, durationMinutes } from "@/lib/time";
+import { QrScanner } from "./qr-scanner";
 import { Button, Card, ErrorText, Field } from "./ui";
 
 export type Visit = Attendance & { canEditIn: boolean; canSetOut: boolean };
@@ -193,48 +194,168 @@ function Stat({ label, value, accent = "" }: { label: string; value: string; acc
 
 // ---------------------------------------------------------------- Add for someone else
 
+type PickMember = { ref: string; name: string; last4: string };
+let membersCache: PickMember[] | null = null;
+
+/**
+ * Pick a registered member (or enter someone new), then scan the gym QR for them.
+ * The scan checks them in, or out if they are already in.
+ */
 export function AddOtherForm({ onAdded, onCancel }: { onAdded: (v: Visit) => void; onCancel: () => void }) {
+  const [members, setMembers] = useState<PickMember[] | null>(membersCache);
+  const [query, setQuery] = useState("");
+  const [picked, setPicked] = useState<PickMember | "new" | null>(null);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState("");
 
-  async function submit(e: FormEvent) {
-    e.preventDefault();
+  useEffect(() => {
+    api<{ members: PickMember[] }>("/api/members").then(
+      (d) => setMembers((membersCache = d.members)),
+      (e) => setError(e.message),
+    );
+  }, []);
+
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (members ?? []).filter((m) => !q || m.name.toLowerCase().includes(q) || m.last4.includes(q)).slice(0, 8);
+  }, [members, query]);
+
+  const ready = picked === "new" ? name.trim().length > 1 && phone.replace(/\D/g, "").length >= 10 : !!picked;
+  const who = picked === "new" ? name.trim() : picked?.name;
+
+  async function onScanned(k: string | undefined) {
+    setScanning(false);
+    setBusy(true);
     setError("");
-    setLoading(true);
     try {
-      const { record } = await api<{ record: Visit }>("/api/attendance/other", { body: { name, phone } });
+      const target = picked === "new" ? { name, phone } : { ref: (picked as PickMember).ref };
+      const { status, record } = await api<{ status: "in" | "out" | "already-in"; record: Visit }>(
+        "/api/attendance/other",
+        { body: { ...target, k } },
+      );
+      navigator.vibrate?.(120);
+      setDone(
+        status === "in"
+          ? `${record.name} checked in at ${fmtTime(record.inTime)} ✓`
+          : status === "out"
+            ? `${record.name} checked out at ${fmtTime(record.outTime)} 👋`
+            : `${record.name} was checked in just now`,
+      );
+      onAdded(record);
+      setPicked(null);
+      setQuery("");
       setName("");
       setPhone("");
-      onAdded(record);
+      if (picked === "new") membersCache = null;
     } catch (err) {
       setError((err as Error).message);
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   }
 
   return (
-    <Card>
-      <form onSubmit={submit} className="flex flex-col gap-4">
-        <div>
-          <p className="font-semibold">Mark attendance for someone else</p>
-          <p className="mt-1 text-sm text-muted">For a friend at the gym without their phone. In time is set to now.</p>
-        </div>
-        <Field label="Their name" value={name} onChange={(e) => setName(e.target.value)} required />
-        <Field label="Their mobile number" value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="numeric" required />
-        <ErrorText>{error}</ErrorText>
-        <div className="flex gap-2">
-          <Button type="submit" className="flex-1" loading={loading}>
-            Mark present
+    <Card className="flex flex-col gap-4">
+      <div>
+        <p className="font-semibold">Mark attendance for someone else</p>
+        <p className="mt-1 text-sm text-muted">Pick the person, then scan the gym QR for them.</p>
+      </div>
+
+      {done && <p className="rounded-lg bg-accent/10 px-3 py-2 text-sm text-accent">{done}</p>}
+
+      {!picked && (
+        <div className="flex flex-col gap-2">
+          <input
+            placeholder="Search member name"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="rounded-xl border border-line bg-surface-2 px-4 py-3 outline-none focus:border-accent"
+          />
+          <div className="flex max-h-72 flex-col overflow-y-auto rounded-xl border border-line">
+            {!members && !error && <p className="p-3 text-sm text-muted">Loading members…</p>}
+            {members && matches.length === 0 && <p className="p-3 text-sm text-muted">No member found</p>}
+            {matches.map((m) => (
+              <button
+                key={m.ref}
+                onClick={() => {
+                  setPicked(m);
+                  setDone("");
+                }}
+                className="flex items-center justify-between border-b border-line px-4 py-3 text-left last:border-b-0 hover:bg-surface-2"
+              >
+                <span className="font-medium">{m.name}</span>
+                <span className="font-mono text-xs text-muted">••{m.last4}</span>
+              </button>
+            ))}
+          </div>
+          <Button variant="ghost" className="justify-start px-1 text-sm" onClick={() => setPicked("new")}>
+            + Someone new (not registered yet)
           </Button>
-          <Button type="button" variant="secondary" onClick={onCancel}>
-            Close
+        </div>
+      )}
+
+      {picked && picked !== "new" && (
+        <div className="flex items-center justify-between rounded-xl border border-accent/40 bg-accent/5 px-4 py-3">
+          <span>
+            <span className="font-semibold">{picked.name}</span>{" "}
+            <span className="font-mono text-xs text-muted">••{picked.last4}</span>
+          </span>
+          <Button variant="ghost" className="px-2 py-1 text-sm" onClick={() => setPicked(null)}>
+            Change
           </Button>
         </div>
-      </form>
+      )}
+
+      {picked === "new" && (
+        <div className="flex flex-col gap-3">
+          <Field label="Their name" value={name} onChange={(e) => setName(e.target.value)} />
+          <Field label="Their mobile number" value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="numeric" />
+          <Button variant="ghost" className="justify-start px-1 text-sm" onClick={() => setPicked(null)}>
+            ← Pick from member list instead
+          </Button>
+        </div>
+      )}
+
+      <ErrorText>{error}</ErrorText>
+      <div className="flex gap-2">
+        <Button className="flex-1" disabled={!ready} loading={busy} onClick={() => setScanning(true)}>
+          Scan QR {who ? `for ${who.split(" ")[0]}` : "to mark attendance"}
+        </Button>
+        <Button variant="secondary" onClick={onCancel}>
+          Close
+        </Button>
+      </div>
+
+      {scanning && (
+        <QrScanner
+          title={`Scan the gym QR to mark ${who}`}
+          onResult={onScanned}
+          onClose={() => setScanning(false)}
+        />
+      )}
     </Card>
+  );
+}
+
+/** Earlier visits today (e.g. a morning session), read-only. */
+export function EarlierVisits({ visits }: { visits: Visit[] }) {
+  if (!visits.length) return null;
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">Earlier today</h2>
+      {visits.map((v) => (
+        <div key={v.id} className="flex items-center justify-between rounded-xl border border-line bg-surface px-4 py-3 font-mono text-sm">
+          <span>
+            <span className="text-accent">{fmtTime(v.inTime)}</span> → <span className="text-out">{fmtTime(v.outTime)}</span>
+          </span>
+          <span className="text-muted">{v.outTime ? fmtDuration(durationMinutes(v.inTime, v.outTime)) : "no out time"}</span>
+        </div>
+      ))}
+    </section>
   );
 }
 
