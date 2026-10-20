@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Card, FullPageSpinner, Header, Shell } from "@/components/ui";
+import { UPI } from "@/lib/brand";
 import type { Payment } from "@/lib/db";
 import { ApiError, api } from "@/lib/client";
 import { fmtDate, fmtMonth, fmtMonthRange, monthSpan } from "@/lib/time";
@@ -28,7 +29,23 @@ export default function FeesPage() {
   const [fees, setFees] = useState<Fees | null>(null);
   const [error, setError] = useState("");
   const [qrMissing, setQrMissing] = useState(false);
+  const [copied, setCopied] = useState(false);
   const router = useRouter();
+
+  async function copyUpiId() {
+    try {
+      await navigator.clipboard.writeText(UPI.id);
+    } catch {
+      // Older/in-app browsers without clipboard access: fall back to a temporary text field.
+      const field = Object.assign(document.createElement("textarea"), { value: UPI.id });
+      document.body.append(field);
+      field.select();
+      document.execCommand("copy");
+      field.remove();
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   useEffect(() => {
     api<Fees>("/api/fees").then(setFees, (e) => {
@@ -62,21 +79,44 @@ export default function FeesPage() {
         {!fees.paidThisMonth && fees.monthlyFee && <p className="mt-1 text-muted">Monthly fee: {rupees(fees.monthlyFee)}</p>}
       </Card>
 
-      <Card className="flex flex-col items-center gap-3 text-center">
+      <Card className="flex flex-col items-center gap-4 text-center">
         <p className="font-semibold">Pay with any UPI app</p>
         {qrMissing ? (
           <p className="py-8 text-sm text-muted">UPI QR not added yet. Please pay at the front desk.</p>
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src="/upi-qr.png"
-            alt="Gym UPI QR code"
-            className="w-64 max-w-full rounded-xl bg-white p-2"
+            src={UPI.qrImage}
+            alt={`UPI QR code for ${UPI.name}`}
+            className="w-72 max-w-full rounded-2xl"
             onError={() => setQrMissing(true)}
           />
         )}
+
+        {/* A phone can't scan its own screen, so offer ways to pay from this phone too. */}
+        <a
+          href={`upi://pay?pa=${encodeURIComponent(UPI.id)}&pn=${encodeURIComponent(UPI.name)}&cu=INR`}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 font-semibold text-accent-ink transition active:scale-[0.98]"
+        >
+          Pay with UPI app
+          {!fees.paidThisMonth && fees.monthlyFee && <span className="font-normal">· {rupees(fees.monthlyFee)}</span>}
+        </a>
+        <div className="flex w-full gap-2">
+          <a
+            href={UPI.qrImage}
+            download="gym-upi-qr.jpeg"
+            className="flex-1 rounded-xl border border-line bg-surface-2 px-3 py-2.5 text-sm font-semibold"
+          >
+            Save QR
+          </a>
+          <button onClick={copyUpiId} className="flex-1 rounded-xl border border-line bg-surface-2 px-3 py-2.5 text-sm font-semibold">
+            {copied ? "Copied ✓" : "Copy UPI ID"}
+          </button>
+        </div>
+        <p className="font-mono text-xs text-muted">{UPI.id}</p>
+
         <p className="text-sm text-muted">
-          After paying, sent the payment screenshot  to Rakesh Sanap. Your fee will appear here once the admin records it.
+          After paying, send the payment screenshot to {UPI.name}. Your fee will appear here once the admin records it.
         </p>
       </Card>
 
