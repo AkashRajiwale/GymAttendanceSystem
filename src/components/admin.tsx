@@ -577,7 +577,8 @@ export function QrTab() {
         <p className="text-sm text-gray-600">Scan when you arrive and again when you leave</p>
       </div>
       {data?.warning && <p className="no-print max-w-sm rounded-lg bg-out/10 px-3 py-2 text-center text-sm text-out">{data.warning}</p>}
-      {data && <p className="break-all text-center font-mono text-xs text-muted">{data.scanUrl}</p>}
+      {/* On screen only, for checking the address; the printed poster shows just the QR. */}
+      {data && <p className="no-print break-all text-center font-mono text-xs text-muted">{data.scanUrl}</p>}
       <div className="no-print flex gap-2">
         <Button onClick={() => window.print()}>Print poster</Button>
         {img && (
