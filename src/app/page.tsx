@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { RegisterForm } from "@/components/member";
 import { InstallApp } from "@/components/install-app";
 import { QrScanner } from "@/components/qr-scanner";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Button, Card, FullPageSpinner, Header, Shell } from "@/components/ui";
 import { isInside, useMe } from "@/components/use-me";
 import { fmtDate, fmtDuration, fmtTime, istToMs } from "@/lib/time";
@@ -82,6 +83,7 @@ export default function Home() {
       {inside && me.mine && <ActiveLine inTime={me.mine.inTime} date={me.mine.date} />}
 
       <InstallApp />
+      <ThemeToggle />
 
       {scanning && <QrScanner intent={inside ? "out" : undefined} onClose={() => setScanning(false)} />}
     </Shell>

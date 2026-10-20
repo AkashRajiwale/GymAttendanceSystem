@@ -97,7 +97,8 @@ export function Header({ right }: { right?: ReactNode }) {
         draggable={false}
         className="flex min-w-0 select-none items-center [-webkit-touch-callout:none]"
       >
-        {/* logo-header.png is public/logo.png trimmed to the artwork (788x120) */}
+        {/* logo-header.png is public/logo.png trimmed to the artwork (788x120); the -light copy has
+            the white "Warasgav" text recolored dark so it shows on the light theme. */}
         <Image
           src="/logo-header.png"
           alt={GYM_NAME}
@@ -105,7 +106,16 @@ export function Header({ right }: { right?: ReactNode }) {
           height={120}
           priority
           draggable={false}
-          className="pointer-events-none h-8 w-auto max-w-full sm:h-9"
+          className="pointer-events-none h-8 w-auto max-w-full sm:h-9 light:hidden"
+        />
+        <Image
+          src="/logo-header-light.png"
+          alt={GYM_NAME}
+          width={788}
+          height={120}
+          priority
+          draggable={false}
+          className="pointer-events-none hidden h-8 w-auto max-w-full sm:h-9 light:block"
         />
       </Link>
       {right}

@@ -569,12 +569,13 @@ export function QrTab() {
   return (
     <div className="flex flex-col items-center gap-4">
       <ErrorText>{error}</ErrorText>
-      <div className="flex w-full max-w-sm flex-col items-center gap-4 rounded-3xl bg-white p-8 text-center text-black">
-        <p className="text-2xl font-black">{GYM_NAME}</p>
+      {/* print: variants make the paper poster fill the page with the QR at 80% of the width */}
+      <div className="flex w-full max-w-sm flex-col items-center gap-4 rounded-3xl bg-white p-8 text-center text-black print:max-w-none print:gap-8 print:rounded-none print:p-0">
+        <p className="text-2xl font-black print:text-5xl">{GYM_NAME}</p>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        {img ? <img src={img} alt="Attendance QR code" className="w-full" /> : <Spinner className="my-24 size-8" />}
-        <p className="text-lg font-bold">Scan to mark attendance</p>
-        <p className="text-sm text-gray-600">Scan when you arrive and again when you leave</p>
+        {img ? <img src={img} alt="Attendance QR code" className="w-full print:w-[80%]" /> : <Spinner className="my-24 size-8" />}
+        <p className="text-lg font-bold print:text-4xl">Scan to mark attendance</p>
+        <p className="text-sm text-gray-600 print:text-2xl">Scan when you arrive and again when you leave</p>
       </div>
       {data?.warning && <p className="no-print max-w-sm rounded-lg bg-out/10 px-3 py-2 text-center text-sm text-out">{data.warning}</p>}
       {/* On screen only, for checking the address; the printed poster shows just the QR. */}

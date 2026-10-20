@@ -76,7 +76,7 @@ export default function FeesPage() {
           />
         )}
         <p className="text-sm text-muted">
-          After paying, show the payment screenshot at the desk. Your fee will appear here once the admin records it.
+          After paying, sent the payment screenshot  to Rakesh Sanap. Your fee will appear here once the admin records it.
         </p>
       </Card>
 
