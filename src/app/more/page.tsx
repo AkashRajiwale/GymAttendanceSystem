@@ -13,14 +13,16 @@ import { fmtMonth } from "@/lib/time";
 export default function MorePage() {
   const { me, setMe, fees, error, reload } = useMe();
   const [showOther, setShowOther] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
     if (me && !me.member) router.replace("/");
   }, [me, router]);
 
+  // Two taps instead of window.confirm(), which in-app browsers silently block.
   async function logout() {
-    if (!confirm("Log out from this phone?")) return;
+    if (!confirmLogout) return setConfirmLogout(true);
     await api("/api/auth/logout", { method: "POST" });
     router.replace("/");
   }
@@ -80,6 +82,7 @@ export default function MorePage() {
         {!me.mine && <p className="text-sm text-muted">No attendance yet today.</p>}
         {editable && (
           <VisitCard
+            key={editable.id}
             visit={editable}
             onChange={(v) => setMe({ ...me, mine: v })}
             onDelete={reload}
@@ -104,8 +107,8 @@ export default function MorePage() {
       )}
 
       <div className="mt-auto flex justify-center pt-6">
-        <Button variant="ghost" onClick={logout} className="text-sm">
-          Log out ({me.member.phone})
+        <Button variant={confirmLogout ? "danger" : "ghost"} onClick={logout} className="text-sm">
+          {confirmLogout ? "Tap again to log out" : `Log out (${me.member.phone})`}
         </Button>
       </div>
     </Shell>

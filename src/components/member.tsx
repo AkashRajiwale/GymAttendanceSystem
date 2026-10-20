@@ -114,6 +114,7 @@ export function VisitCard({
   const [time, setTime] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
 
   async function patch(fields: { inTime?: string; outTime?: string }, key: string) {
     setError("");
@@ -133,14 +134,15 @@ export function VisitCard({
   }
 
   async function remove() {
-    if (!confirm(`Delete ${visit.name}'s attendance from ${fmtTime(visit.inTime)}? This can't be undone.`)) return;
     setError("");
     setLoading("delete");
     try {
       await api("/api/attendance", { method: "DELETE", body: { date: visit.date, id: visit.id } });
+      setConfirming(false);
       onDelete?.(visit);
     } catch (err) {
       setError((err as Error).message);
+    } finally {
       setLoading(null);
     }
   }
@@ -203,9 +205,27 @@ export function VisitCard({
         </div>
       )}
       {!editing && visit.canDelete && onDelete && (
-        <Button variant="danger" className="self-center py-1.5 text-sm" loading={loading === "delete"} onClick={remove}>
-          Delete this entry
-        </Button>
+        // Confirmed in-app: window.confirm() is silently blocked by many in-app browsers
+        // (Google Lens, WhatsApp), which made this button appear to do nothing.
+        confirming ? (
+          <div className="flex flex-col gap-2 rounded-xl border border-danger/40 bg-danger/5 p-3">
+            <p className="text-center text-sm">
+              Delete {visit.name.split(" ")[0]}&apos;s entry from {fmtTime(visit.inTime)}? This can&apos;t be undone.
+            </p>
+            <div className="flex gap-2">
+              <Button className="flex-1 bg-danger py-2 text-sm text-accent-ink" loading={loading === "delete"} onClick={remove}>
+                Yes, delete
+              </Button>
+              <Button variant="secondary" className="flex-1 py-2 text-sm" onClick={() => setConfirming(false)}>
+                Keep it
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button variant="danger" className="self-center py-1.5 text-sm" onClick={() => setConfirming(true)}>
+            Delete this entry
+          </Button>
+        )
       )}
       <ErrorText>{error}</ErrorText>
     </Card>

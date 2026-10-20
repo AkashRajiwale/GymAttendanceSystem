@@ -558,7 +558,7 @@ export function MembersTab() {
 // ---------------------------------------------------------------- QR poster
 
 export function QrTab() {
-  const { data, error } = useData<{ scanUrl: string }>("/api/admin/config");
+  const { data, error } = useData<{ scanUrl: string; warning: string | null }>("/api/admin/config");
   const [img, setImg] = useState("");
 
   useEffect(() => {
@@ -576,6 +576,7 @@ export function QrTab() {
         <p className="text-lg font-bold">Scan to mark attendance</p>
         <p className="text-sm text-gray-600">Scan when you arrive and again when you leave</p>
       </div>
+      {data?.warning && <p className="no-print max-w-sm rounded-lg bg-out/10 px-3 py-2 text-center text-sm text-out">{data.warning}</p>}
       {data && <p className="break-all text-center font-mono text-xs text-muted">{data.scanUrl}</p>}
       <div className="no-print flex gap-2">
         <Button onClick={() => window.print()}>Print poster</Button>
