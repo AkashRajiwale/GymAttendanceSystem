@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { RegisterForm } from "@/components/member";
+import { InstallApp } from "@/components/install-app";
 import { QrScanner } from "@/components/qr-scanner";
 import { Button, Card, FullPageSpinner, Header, Shell } from "@/components/ui";
 import { isInside, useMe } from "@/components/use-me";
@@ -79,6 +80,8 @@ export default function Home() {
       </div>
 
       {inside && me.mine && <ActiveLine inTime={me.mine.inTime} date={me.mine.date} />}
+
+      <InstallApp />
 
       {scanning && <QrScanner intent={inside ? "out" : undefined} onClose={() => setScanning(false)} />}
     </Shell>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { InstallApp } from "@/components/install-app";
 import { AddOtherForm, AddedVisits, EarlierVisits, VisitCard, type Visit } from "@/components/member";
 import { Button, Card, FullPageSpinner, Header, Shell } from "@/components/ui";
 import { isInside, useMe } from "@/components/use-me";
@@ -106,7 +107,8 @@ export default function MorePage() {
         </Button>
       )}
 
-      <div className="mt-auto flex justify-center pt-6">
+      <div className="mt-auto flex flex-col items-center gap-3 pt-6">
+        <InstallApp />
         <Button variant={confirmLogout ? "danger" : "ghost"} onClick={logout} className="text-sm">
           {confirmLogout ? "Tap again to log out" : `Log out (${me.member.phone})`}
         </Button>
