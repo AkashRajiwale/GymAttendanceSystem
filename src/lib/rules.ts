@@ -52,7 +52,7 @@ export function checkInTime(a: Attendance, inTime: string, now = Date.now()) {
   const ms = istToMs(a.date, inTime);
   if (ms < created - IN_EDIT_WINDOW) return "In time can be at most 1 hour before you scanned";
   if (ms > now + MINUTE) return "In time can't be in the future";
-  if (a.outTime && ms >= istToMs(a.date, a.outTime)) return "In time must be before out time";
+  if (a.outTime && ms > istToMs(a.date, a.outTime)) return "In time can't be after out time";
   return null;
 }
 
@@ -61,7 +61,8 @@ export function checkOutTime(a: Attendance, outTime: string, now = Date.now()) {
   // A clock time before the in time means after midnight only when that is near now.
   const sameDayMs = istToMs(a.date, outTime);
   const ms = sameDayMs <= inMs(a) && Math.abs(outMs(a, outTime) - now) <= OUT_WINDOW ? outMs(a, outTime) : sameDayMs;
-  if (ms <= inMs(a)) return "Out time must be after in time";
+  // Times are stored to the minute, so checking out in the same minute gives out == in.
+  if (ms < inMs(a)) return "Out time can't be before in time";
   if (Math.abs(ms - now) > OUT_WINDOW) return "Out time must be within 2 hours of now";
   return null;
 }

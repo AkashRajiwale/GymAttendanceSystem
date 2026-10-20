@@ -1,16 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { RegisterForm, VisitCard } from "@/components/member";
+import { useEffect, useState } from "react";
+import { RegisterForm } from "@/components/member";
 import { QrScanner } from "@/components/qr-scanner";
 import { Button, Card, FullPageSpinner, Header, Shell } from "@/components/ui";
 import { isInside, useMe } from "@/components/use-me";
-import { fmtDate } from "@/lib/time";
+import { fmtDate, fmtDuration, fmtTime, istToMs } from "@/lib/time";
 
 /** Home is just the scan button, plus the visit in progress. Everything else is in /more. */
 export default function Home() {
-  const { me, setMe, fees, error, reload } = useMe();
+  const { me, fees, error, reload } = useMe();
   const [scanning, setScanning] = useState(false);
 
   if (error) {
@@ -78,16 +78,33 @@ export default function Home() {
         </p>
       </div>
 
-      {inside && me.mine && (
-        <VisitCard
-          visit={me.mine}
-          onChange={(v) => setMe({ ...me, mine: v })}
-          onDelete={reload}
-          title="You're in the gym"
-        />
-      )}
+      {inside && me.mine && <ActiveLine inTime={me.mine.inTime} date={me.mine.date} />}
 
       {scanning && <QrScanner intent={inside ? "out" : undefined} onClose={() => setScanning(false)} />}
     </Shell>
+  );
+}
+
+/** One small line under the button while inside: in time, time spent so far, and a link to edit. */
+function ActiveLine({ inTime, date }: { inTime: string; date: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  const mins = Math.max(0, Math.floor((now - istToMs(date, inTime)) / 60_000));
+
+  return (
+    <div className="flex items-center justify-center gap-3 rounded-full border border-line bg-surface px-4 py-2 text-sm">
+      <span className="text-muted">
+        In <span className="font-mono font-semibold text-accent">{fmtTime(inTime)}</span>
+      </span>
+      <span className="text-line">|</span>
+      <span className="font-mono font-semibold">{fmtDuration(mins)}</span>
+      <span className="text-line">|</span>
+      <Link href="/more" className="text-muted underline-offset-4 hover:text-foreground hover:underline">
+        Edit
+      </Link>
+    </div>
   );
 }

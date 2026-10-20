@@ -50,10 +50,11 @@ export default function MorePage() {
   }
   if (!me?.member) return <FullPageSpinner />;
 
-  // Home already shows the visit in progress; here we show today's finished one, still editable for a while.
-  const latestDone = me.mine && !isInside(me) ? me.mine : null;
-  const earlier = [...(me.earlier ?? []), ...(latestDone && !(latestDone.canEditIn || latestDone.canSetOut || latestDone.canDelete) ? [latestDone] : [])];
-  const editable = latestDone && (latestDone.canEditIn || latestDone.canSetOut || latestDone.canDelete) ? latestDone : null;
+  // Home only shows a small summary; the full controls for the latest visit live here while
+  // anything is still allowed (check out, edit, delete). Once locked it joins the read-only list.
+  const latest = me.mine;
+  const editable = latest && (latest.canEditIn || latest.canSetOut || latest.canDelete) ? latest : null;
+  const earlier = [...(me.earlier ?? []), ...(latest && !editable ? [latest] : [])];
 
   return (
     <Shell>
@@ -77,16 +78,13 @@ export default function MorePage() {
       <section className="flex flex-col gap-2">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">Today</h2>
         {!me.mine && <p className="text-sm text-muted">No attendance yet today.</p>}
-        {isInside(me) && (
-          <p className="rounded-xl border border-accent/40 bg-surface px-4 py-3 text-sm">
-            You&apos;re in the gym now —{" "}
-            <Link href="/" className="text-accent underline-offset-4 hover:underline">
-              see it on Home
-            </Link>
-          </p>
-        )}
         {editable && (
-          <VisitCard visit={editable} onChange={(v) => setMe({ ...me, mine: v })} onDelete={reload} title="Last visit" />
+          <VisitCard
+            visit={editable}
+            onChange={(v) => setMe({ ...me, mine: v })}
+            onDelete={reload}
+            title={isInside(me) ? "You're in the gym" : "Last visit"}
+          />
         )}
       </section>
       <EarlierVisits visits={earlier} />
